@@ -1,0 +1,100 @@
+#Predict the manner an exercise was done
+
+##Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this report, I utilized data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. In essence, I will use cross validation and build a prediction model to predict the manner in which they did the exercise.
+
+##Data
+
+First, load the data
+
+```{r cache=TRUE}
+library(RCurl)
+trainingurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testingurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainingdata <- read.csv(text=getURL(trainingurl), na.strings=c("", "NA"))
+testingdata <- read.csv(text=getURL(testingurl), na.strings=c("", "NA"))
+```
+
+Since the first column of the data is just an index, we can remove it from the training data set.
+```{r}
+trainingdata$X <- NULL
+```
+
+Likewise, user and timestamp variables should not impact whether barbell lifts are performed correctly or not.
+
+```{r}
+removecols <- c("user_name", "raw_timestamp_part_1",
+                    "raw_timestamp_part_2", "cvtd_timestamp")
+for (col in removecols) {
+    trainingdata[, col] <- NULL
+}
+```
+
+I removed variables from the training and testing data that have too many missing values, where imputing is not possible.
+
+```{r}
+NAs <- apply(trainingdata,2,function(x) {sum(is.na(x))})
+trainingdata <- trainingdata[,which(NAs == 0)]
+```
+
+I removed variables that were zero
+variance predictors, which may not have many missing values but have one or few unique values relative to the number of samples. Also, the ratio of frequency of the most common value to the frequency of second most common value is large.
+
+```{r}
+library(caret)
+nsv <- nearZeroVar(trainingdata)
+trainingdata <- trainingdata[-nsv]
+testingdata <- testingdata[-nsv]
+```
+
+This leaves the final set of predictors used for classification:
+
+```{r}
+names(trainingdata)
+```
+
+##Random Forest Model & Cross Validation
+
+To predict the action class, I used the random forest method. To measure the accuracy of the model, I performed a 10-fold cross validation with 80:20 split, on each fold. In other words, 80% of the data was used for training the random forest model and the remaining 20% was used for testing.
+
+```{r cache=TRUE}
+library(randomForest)
+set.seed(1)
+obs <- c()
+preds <- c()
+for(i in 1:10) {
+    intrain = sample(1:dim(trainingdata)[1], size=dim(trainingdata)[1] * 0.8, replace=F)
+    trainingcross = trainingdata[intrain,]
+    testingcross = trainingdata[-intrain,]
+   rf <- randomForest(classe ~ ., data=trainingcross)
+    obs <- c(obs, testingcross$classe)
+   preds <- c(preds, predict(rf, testingcross))
+}
+```
+
+##Expected out of sample error 
+
+I used the confusion matrix for predictions on cross validation folds.
+
+```{r}
+confmat <- confusionMatrix(table(preds, obs))
+confmat$table
+```
+
+The accuracy of the model is (in %)
+```{r} 
+confmat$overall[[1]] * 100
+```
+
+The estimated out-of-sample error is 1 minus the model’s accuracy (provided in the confusion matrix) or 0.20%
+
+##Predictions
+
+Finally, we train the random forest so that we can predict the class of an action, given a set of activity measurements.
+
+```{r cache=TRUE}
+model <- randomForest(classe ~ ., data=trainingdata)
+```
